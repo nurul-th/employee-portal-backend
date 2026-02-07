@@ -20,6 +20,3 @@ Route::middleware('auth:sanctum')->group(function(){
 });
 */
 
-Route::middleware('auth:sanctum')->get('/debug-user', function (Request $request) {
-    return $request->user();
-});
