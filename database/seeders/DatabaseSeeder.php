@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             DepartmentSeeder::class,
             DocumentCategorySeeder::class,
             RoleSeeder::class,
+            UserRoleSeeder::class,
         ]);
         
         User::firstOrCreate(
