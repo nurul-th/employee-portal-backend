@@ -14,7 +14,7 @@ class RoleSeeder extends Seeder
     public function run(): void
     {
         $adminRole = Role::firstOrCreate(['name' => 'Admin']);
-        $managerRoler = Role::firstOrCreate(['name' => 'Manager']);
+        $managerRole = Role::firstOrCreate(['name' => 'Manager']);
         $employeeRole = Role::firstOrCreate(['name' => 'Employee']);
 
         // Create Admin User
@@ -28,5 +28,29 @@ class RoleSeeder extends Seeder
         );
 
         $admin->assignRole($adminRole);
+
+        // Create Manager
+        $manager = User::firstOrCreate(
+            ['email' => 'manager@example.com'],
+            [
+                'name' => 'Manager User',
+                'password' => Hash::make('password'),
+                'department_id' => 1,
+            ]
+        );
+
+        $manager->assignRole($managerRole);
+
+        // Create Employee
+        $employee = User::firstOrCreate(
+            ['email' => 'employee@example.com'],
+            [
+                'name' => 'Employee User',
+                'password' => Hash::make('password'),
+                'department_id' => 1,
+            ]
+        );
+
+        $employee->assignRole($employeeRole);
     }
 }
