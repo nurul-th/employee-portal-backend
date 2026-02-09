@@ -46,7 +46,11 @@ class DocumentCategorySeeder extends Seeder
     ];
 
     foreach ($categories as $category) {
-        DocumentCategory::create($category);
+    DocumentCategory::firstOrCreate(
+        ['title' => $category['title']],
+        ['description' => $category['description']]
+    );
     }
+
 }
-    }
+}

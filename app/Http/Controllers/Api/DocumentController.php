@@ -82,6 +82,11 @@ class DocumentController extends Controller
         $file = $request->file('file');
         $filePath = $file->store('documents');
 
+        if ($user->hasRole('Employee')) {
+            unset($request['access_level'], $request['department_id']);
+        }
+
+
         // Save document
         $document = Document::create([
             'title' => $request->title,

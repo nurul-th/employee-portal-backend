@@ -27,8 +27,9 @@ return new class extends Migration
                   ->cascadeOnDelete();
             
             $table->foreignId('department_id')
+                  ->nullable()
                   ->constrained('departments')
-                  ->cascadeOnDelete();
+                  ->nullOnDelete();
             
             $table->foreignId('uploaded_by')
                   ->constrained('users')
