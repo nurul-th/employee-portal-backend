@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Document;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Response;
 
 class DocumentController extends Controller
 {
-    //LIST DOCUMENTS
+    // LIST DOCUMENTS
     public function index(Request $request)
     {
         $user = $request->user();
@@ -42,6 +44,14 @@ class DocumentController extends Controller
         ->with(['category', 'department', 'uploader'])
         ->latest()
         ->get();
+    }
+
+    // VIEW SINGLE DOCUMENT
+    public function show(Document $document, Request $request)
+    {
+        return response()->json(
+            $document->load(['category', 'department', 'uploader'])
+        );
     }
 
     // UPLOAD DOCUMENT
@@ -78,16 +88,10 @@ class DocumentController extends Controller
             $departmentId = null;
         }
 
-        // Store file
+        // Store file (public disk recommended)
         $file = $request->file('file');
-        $filePath = $file->store('documents');
+        $filePath = $file->store('documents', 'public');
 
-        if ($user->hasRole('Employee')) {
-            unset($request['access_level'], $request['department_id']);
-        }
-
-
-        // Save document
         $document = Document::create([
             'title' => $request->title,
             'category_id' => $request->document_category_id,
@@ -106,4 +110,59 @@ class DocumentController extends Controller
             'document' => $document,
         ], 201);
     }
+
+    // DOWNLOAD DOCUMENT
+    public function download(Document $document)
+    {
+        if (!Storage::disk('public')->exists($document->file_path)) {
+            return response()->json(['message' => 'File not found'], 404);
+        }
+
+        $document->increment('download_count');
+
+        return response()->download(
+        storage_path('app/public/' . $document->file_path),
+        $document->file_name
+        );
+        
+        /*return Storage::disk('public')->download(
+            $document->file_path,
+            $document->file_name
+        );*/
+    }
+
+    // DELETE DOCUMENT
+
+    public function destroy(Document $document, Request $request)
+    {
+        $user = $request->user();
+
+        // Authorization rules
+        if (
+            $user->hasRole('Employee') && $document->uploaded_by !== $user->id)
+            {
+            return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+        if (
+            $user->hasRole('Manager') &&
+            $document->access_level === 'public') 
+            {
+            return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+        // Delete file from storage
+        if (Storage::disk('public')->exists($document->file_path)) {
+            Storage::disk('public')->delete($document->file_path);
+            }
+
+         // Delete DB record
+        $document->delete();
+
+        return response()->json([
+            'message' => 'Document deleted successfully'
+         ]);
+    }
+
 }
+
