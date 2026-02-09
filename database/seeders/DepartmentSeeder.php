@@ -21,6 +21,13 @@ class DepartmentSeeder extends Seeder
         'Operations',   
         ];
 
+        /*foreach ($departments as $name) { 
+            Department::firstOrCreate( 
+                ['name' => $name], 
+                ['created_at' => now(), 'updated_at' => now()] 
+                );
+            }*/
+
         foreach ($departments as $name){
             Department::create(
                 [
