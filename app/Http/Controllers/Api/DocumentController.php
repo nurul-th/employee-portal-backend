@@ -49,9 +49,43 @@ class DocumentController extends Controller
     // VIEW SINGLE DOCUMENT
     public function show(Document $document, Request $request)
     {
-        return response()->json(
-            $document->load(['category', 'department', 'uploader'])
-        );
+        $user = $request->user();
+
+        // Admin can see everything
+        if ($user->hasRole('Admin')) {
+            return response()->json(
+                $document->load(['category', 'department', 'uploader'])
+            );
+        }
+
+        // Public document → everyone
+        if ($document->access_level === 'public') {
+            return response()->json(
+                $document->load(['category', 'department', 'uploader'])
+            );
+        }
+
+        // Department document
+        if (
+            $document->access_level === 'department' &&
+            $user->department_id === $document->department_id
+        ) {
+            return response()->json(
+                $document->load(['category', 'department', 'uploader'])
+            );
+        }
+
+        // Private document → uploader only
+        if (
+            $document->access_level === 'private' &&
+            $document->uploaded_by === $user->id
+        ) {
+            return response()->json(
+                $document->load(['category', 'department', 'uploader'])
+            );
+        }
+
+        return response()->json(['message' => 'Unauthorized'], 403);
     }
 
     // UPLOAD DOCUMENT
