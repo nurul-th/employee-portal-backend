@@ -6,197 +6,310 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Document;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Response;
 
 class DocumentController extends Controller
 {
     // LIST DOCUMENTS
+   
     public function index(Request $request)
     {
         $user = $request->user();
 
-        // Admin → see all
-        if ($user->hasRole('Admin')) {
-            return Document::with(['category', 'department', 'uploader'])
-                ->latest()
-                ->get();
+        $query = Document::with(['category','department','uploader']);
+
+        // RBAC VISIBILITY FILTER
+
+        if (!$user->hasRole('Admin')) {
+
+            $query->where(function ($q) use ($user) {
+
+                // Public
+                $q->where('access_level', 'public')
+
+                // Department
+                ->orWhere(function ($sub) use ($user) {
+                    $sub->where('access_level', 'department')
+                        ->where('department_id', $user->department_id);
+                })
+
+                // Private (own only)
+                ->orWhere(function ($sub) use ($user) {
+                    $sub->where('access_level', 'private')
+                        ->where('uploaded_by', $user->id);
+                });
+
+            });
         }
 
-        // Manager & Employee
-        return Document::where(function ($query) use ($user) {
+        // SEARCH (title + description)
 
-            // Public
-            $query->where('access_level', 'public')
+        if ($request->filled('search')) {
+            $search = $request->search;
 
-            // Department (Manager)
-            ->orWhere(function ($q) use ($user) {
-                $q->where('access_level', 'department')
-                  ->where('department_id', $user->department_id);
-            })
-
-            // Private (own only)
-            ->orWhere(function ($q) use ($user) {
-                $q->where('access_level', 'private')
-                  ->where('uploaded_by', $user->id);
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'LIKE', "%{$search}%")
+                ->orWhere('description', 'LIKE', "%{$search}%");
             });
+        }
 
-        })
-        ->with(['category', 'department', 'uploader'])
-        ->latest()
-        ->get();
+        // FILTERS (AND LOGIC)
+
+        if ($request->filled('category')) {
+            $query->where('category_id', $request->category);
+        }
+
+        if ($request->filled('department')) {
+            $query->where('department_id', $request->department);
+        }
+
+        // SORT
+
+        if ($request->filled('sort')) {
+
+            switch ($request->sort) {
+                case 'oldest':
+                    $query->orderBy('created_at', 'asc');
+                    break;
+
+                case 'most_downloaded':
+                    $query->orderBy('download_count', 'desc');
+                    break;
+
+                default:
+                    $query->latest();
+            }
+
+        } else {
+            $query->latest();
+        }
+
+        $documents = $query->paginate(10);
+
+        return response()->json([
+            'count' => $documents->total(),
+            'current_page' => $documents->currentPage(),
+            'last_page' => $documents->lastPage(),
+            'data' => $documents->items()
+        ]);
+
     }
 
-    // VIEW SINGLE DOCUMENT
-    public function show(Document $document, Request $request)
+    // SHOW SINGLE DOCUMENT
+    
+    public function show($id, Request $request)
     {
         $user = $request->user();
+        $document = Document::findOrFail($id);
 
-        // Admin can see everything
         if ($user->hasRole('Admin')) {
-            return response()->json(
-                $document->load(['category', 'department', 'uploader'])
-            );
+            return response()->json($document->load(['category','department','uploader']));
         }
 
-        // Public document → everyone
         if ($document->access_level === 'public') {
-            return response()->json(
-                $document->load(['category', 'department', 'uploader'])
-            );
+            return response()->json($document->load(['category','department','uploader']));
         }
 
-        // Department document
         if (
             $document->access_level === 'department' &&
-            $user->department_id === $document->department_id
+            $document->department_id === $user->department_id
         ) {
-            return response()->json(
-                $document->load(['category', 'department', 'uploader'])
-            );
+            return response()->json($document->load(['category','department','uploader']));
         }
 
-        // Private document → uploader only
         if (
             $document->access_level === 'private' &&
             $document->uploaded_by === $user->id
         ) {
-            return response()->json(
-                $document->load(['category', 'department', 'uploader'])
-            );
+            return response()->json($document->load(['category','department','uploader']));
         }
 
-        return response()->json(['message' => 'Unauthorized'], 403);
+        return response()->json(['message'=>'Unauthorized'],403);
     }
 
-    // UPLOAD DOCUMENT
+    // STORE DOCUMENT
     public function store(Request $request)
     {
         $user = $request->user();
 
-        // Base validation
-        $request->validate([
-            'title' => 'required|string|max:255',
-            'document_category_id' => 'required|exists:document_categories,id',
-            'file' => 'required|file|max:10240',
-        ]);
-
-        // Role-based rules
-        if ($user->hasRole('Admin')) {
-
-            $request->validate([
-                'access_level' => 'required|in:public,department,private',
-                'department_id' => 'required_if:access_level,department|exists:departments,id',
-            ]);
-
-            $accessLevel = $request->access_level;
-            $departmentId = $request->department_id;
-
-        } elseif ($user->hasRole('Manager')) {
-
-            $accessLevel = 'department';
-            $departmentId = $user->department_id;
-
-        } else {
-            // Employee
-            $accessLevel = 'private';
-            $departmentId = null;
+        // ❌ Employee not allowed to upload
+        if ($user->hasRole('Employee')) {
+            return response()->json([
+            'message' => 'Unauthorized'
+            ], 403);
         }
 
-        // Store file (public disk recommended)
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'document_category_id' => 'required|exists:document_categories,id',
+            'file' => 'required|file|mimes:pdf,docx,xlsx,jpg,png|max:10240',
+            'access_level' => 'required|in:public,department,private',
+        ]);
+
+        if ($user->hasRole('Admin')) {
+
+            $departmentId = $request->access_level === 'department'
+                ? $request->department_id
+                : null;
+
+        } else { 
+            // Manager only
+            $departmentId = $user->department_id;
+        }
+
         $file = $request->file('file');
         $filePath = $file->store('documents', 'public');
 
         $document = Document::create([
             'title' => $request->title,
+            'description' => $request->description,
             'category_id' => $request->document_category_id,
             'department_id' => $departmentId,
-            'access_level' => $accessLevel,
+            'access_level' => $request->access_level,
             'file_path' => $filePath,
             'file_name' => $file->getClientOriginalName(),
             'file_size' => $file->getSize(),
-            'file_type' => $file->getClientMimeType(),
+            'file_type' => $file->getClientOriginalExtension(),
             'uploaded_by' => $user->id,
             'download_count' => 0,
         ]);
 
         return response()->json([
-            'message' => 'Document uploaded successfully',
-            'document' => $document,
-        ], 201);
+            'message'=>'Document uploaded successfully',
+            'document'=>$document
+        ],201);
     }
 
-    // DOWNLOAD DOCUMENT
-    public function download(Document $document)
+    // UPDATE DOCUMENT METADATA
+    public function update($id, Request $request)
     {
+        $user = $request->user();
+        $document = Document::findOrFail($id);
+
+        // 👑 Admin → edit anything
+        if ($user->hasRole('Admin')) {
+            // allowed
+        }
+
+        // 🧑‍💼 Manager → own uploaded only
+        elseif ($user->hasRole('Manager')) {
+
+            if ($document->uploaded_by !== $user->id) {
+                return response()->json(['message'=>'Unauthorized'],403);
+            }
+        }
+
+        // 👨‍💻 Employee → not allowed
+        else {
+            return response()->json(['message'=>'Unauthorized'],403);
+        }
+
+        $request->validate([
+            'title' => 'sometimes|string|max:255',
+            'description' => 'nullable|string',
+            'access_level' => 'sometimes|in:public,department,private',
+            'department_id' => 'nullable|exists:departments,id'
+        ]);
+
+        $document->update($request->only([
+            'title',
+            'description',
+            'access_level',
+            'department_id'
+        ]));
+
+        return response()->json([
+            'message' => 'Document updated successfully',
+            'document' => $document
+        ]);
+    }
+
+    // DOWNLOAD
+    public function download($id, Request $request)
+    {
+        $user = $request->user();
+        $document = Document::findOrFail($id);
+
+        $canDownload = false;
+
+        // Admin → full access
+        if ($user->hasRole('Admin')) {
+            $canDownload = true;
+        }
+
+        // Public → everyone
+        elseif ($document->access_level === 'public') {
+            $canDownload = true;
+        }
+
+        // Department → same department
+        elseif (
+            $document->access_level === 'department' &&
+            $document->department_id === $user->department_id
+        ) {
+            $canDownload = true;
+        }
+
+        // Private → uploader only
+        elseif (
+            $document->access_level === 'private' &&
+            $document->uploaded_by === $user->id
+        ) {
+            $canDownload = true;
+        }
+
+        if (!$canDownload) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
         if (!Storage::disk('public')->exists($document->file_path)) {
-            return response()->json(['message' => 'File not found'], 404);
+            return response()->json(['message'=>'File not found'],404);
         }
 
         $document->increment('download_count');
 
-        return response()->download(
-        storage_path('app/public/' . $document->file_path),
-        $document->file_name
-        );
-        
-        /*return Storage::disk('public')->download(
+        return Storage::disk('public')->download(
             $document->file_path,
             $document->file_name
-        );*/
+        );
     }
 
     // DELETE DOCUMENT
-
-    public function destroy(Document $document, Request $request)
+    public function destroy($id, Request $request)
     {
         $user = $request->user();
+        $document = Document::findOrFail($id);
 
-        // Authorization rules
-        if (
-            $user->hasRole('Employee') && $document->uploaded_by !== $user->id)
-            {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        // 👑 Admin → full access
+        if ($user->hasRole('Admin')) {
+            // allowed
+        }
+
+        // 🧑‍💼 Manager → own uploaded only
+        elseif ($user->hasRole('Manager')) {
+
+            if ($document->uploaded_by !== $user->id) {
+                return response()->json([
+                    'message' => 'Unauthorized'
+                ], 403);
             }
+        }
 
-        if (
-            $user->hasRole('Manager') &&
-            $document->access_level === 'public') 
-            {
-            return response()->json(['message' => 'Unauthorized'], 403);
-            }
+        // 👨‍💻 Employee → not allowed at all
+        else {
+            return response()->json([
+                'message' => 'Unauthorized'
+            ], 403);
+        }
 
-        // Delete file from storage
         if (Storage::disk('public')->exists($document->file_path)) {
             Storage::disk('public')->delete($document->file_path);
-            }
+        }
 
-         // Delete DB record
         $document->delete();
 
         return response()->json([
             'message' => 'Document deleted successfully'
-         ]);
+        ]);
     }
-
 }
-

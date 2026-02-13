@@ -1,30 +1,39 @@
 <?php
 
-use Illuminate\Http\Request;
+use App\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\DepartmentController;
+use App\Http\Controllers\Api\CategoryController;
 
-Route::get('/ping', function () {
-    return response()->json(['message' => 'API OK']);
+// API V1 Routes
+
+Route::prefix('v1')->group(function () {
+
+    // Authentication
+
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::get('/user', [AuthController::class, 'user']);
+
+        // Documents
+
+        Route::get('/documents', [DocumentController::class, 'index']);
+        Route::get('/documents/{id}', [DocumentController::class, 'show']);
+        Route::post('/documents', [DocumentController::class, 'store']);
+        Route::patch('/documents/{id}', [DocumentController::class, 'update']);
+        Route::delete('/documents/{id}', [DocumentController::class, 'destroy']);
+        Route::get('/documents/{id}/download', [DocumentController::class, 'download']);
+
+        // Master Data
+        
+        Route::get('/departments', [DepartmentController::class, 'index']);
+        Route::get('/categories', [CategoryController::class, 'index']);
+
+    });
 });
-
-Route::post('/login', [AuthController::class, 'login']);
-
-Route::middleware('auth:sanctum')->group(function () {
-
-    Route::get('/me', [AuthController::class, 'me']);
-    Route::post('/logout', [AuthController::class, 'logout']);
-
-    Route::get('/documents', [DocumentController::class, 'index']);
-    Route::post('/documents', [DocumentController::class, 'store']);
-    Route::get('/documents/{document}', [DocumentController::class, 'show']);
-    Route::get('/documents/{document}/download', [DocumentController::class, 'download']);
-    Route::delete('/documents/{document}', [DocumentController::class, 'destroy']);
-});
-
-/* Route::middleware('auth:sanctum')->get('/me', function (Request $request) {
-    return $request->user();
-});
-*/
-
