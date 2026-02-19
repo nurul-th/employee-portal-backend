@@ -12,7 +12,7 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        $credentials = $request -> validate([
+        $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required'],
         ]);
@@ -23,20 +23,24 @@ class AuthController extends Controller
             ]);
         }
 
-        $user = $request->user();
+        $user = Auth::user();
+
+        // delete old tokens supaya kemas
+        $user->tokens()->delete();
 
         $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
             'token' => $token,
             'user' => [
-                'id'=> $user->id,
-                'name'=> $user->name,
-                'email'=> $user->email,
-                'roles'=> $user->getRoleNames(),
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'roles' => $user->getRoleNames(),
             ],
         ]);
     }
+
 
     public function logout(Request $request)
     {
