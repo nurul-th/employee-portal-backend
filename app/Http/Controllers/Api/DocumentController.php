@@ -41,26 +41,36 @@ class DocumentController extends Controller
             });
         }
 
-        // SEARCH (title + description)
+        // SEARCH (title + description) - case-insensitive + support aliases
+        $search = $request->input('search')
+            ?? $request->input('q')
+            ?? $request->input('keyword');
 
-        if ($request->filled('search')) {
-            $search = $request->search;
+        if (!empty($search)) {
+            $search = trim(mb_strtolower($search));
 
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'LIKE', "%{$search}%")
-                ->orWhere('description', 'LIKE', "%{$search}%");
-            });
+        $query->where(function ($q) use ($search) {
+            $q->whereRaw('LOWER(title) LIKE ?', ["%{$search}%"])
+              ->orWhereRaw('LOWER(description) LIKE ?', ["%{$search}%"]);
+        });
+    }
+
+        // FILTERS (AND LOGIC) - support aliases
+    $categoryId = $request->input('category')
+    ?? $request->input('category_id')
+    ?? $request->input('document_category_id');
+
+        if (!empty($categoryId)) {
+        $query->where('category_id', $categoryId);
         }
 
-        // FILTERS (AND LOGIC)
+    $departmentId = $request->input('department')
+        ?? $request->input('department_id')
+        ?? $request->input('document_department_id');
 
-        if ($request->filled('category')) {
-            $query->where('category_id', $request->category);
-        }
-
-        if ($request->filled('department')) {
-            $query->where('department_id', $request->department);
-        }
+    if (!empty($departmentId)) {
+        $query->where('department_id', $departmentId);
+    }
 
         // SORT
 
