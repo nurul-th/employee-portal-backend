@@ -36,11 +36,10 @@ class AuthController extends Controller
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'roles' => $user->getRoleNames(),
+                'roles' => $user->getRoleNames()->values()->all(),
             ],
         ]);
     }
-
 
     public function logout(Request $request)
     {
@@ -59,7 +58,7 @@ class AuthController extends Controller
             'id' => $user->id,
             'name' =>$user->name,
             'email' =>$user->email,
-            'roles' =>$user->getRoleNames(),
+            'roles' =>$user->getRoleNames()->values()->all(),
         ]);
     }
 }
