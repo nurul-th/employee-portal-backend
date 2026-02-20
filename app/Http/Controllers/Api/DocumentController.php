@@ -56,33 +56,46 @@ class DocumentController extends Controller
     }
 
         // FILTERS (AND LOGIC) - support aliases
-    $categoryId = $request->input('category')
-    ?? $request->input('category_id')
-    ?? $request->input('document_category_id');
+        $categoryId = $request->input('category')
+            ?? $request->input('category_id')
+            ?? $request->input('document_category_id');
 
         if (!empty($categoryId)) {
         $query->where('category_id', $categoryId);
         }
 
-    $departmentId = $request->input('department')
-        ?? $request->input('department_id')
-        ?? $request->input('document_department_id');
+        $departmentId = $request->input('department')
+            ?? $request->input('department_id')
+         ?? $request->input('document_department_id');
 
-    if (!empty($departmentId)) {
-        $query->where('department_id', $departmentId);
-    }
+        if (!empty($departmentId)) {
+            $query->where('department_id', $departmentId);
+        }
 
         // SORT
 
         if ($request->filled('sort')) {
 
             switch ($request->sort) {
+
+                case 'name':
+                    $query->orderBy('title', 'asc');
+                break;
+
                 case 'oldest':
                     $query->orderBy('created_at', 'asc');
                     break;
 
+                case 'newest':
+                    $query->orderBy('created_at', 'desc');
+                    break;
+
                 case 'most_downloaded':
                     $query->orderBy('download_count', 'desc');
+                    break;
+
+                case 'size':
+                    $query->orderBy('file_size', 'desc');
                     break;
 
                 default:
@@ -93,13 +106,16 @@ class DocumentController extends Controller
             $query->latest();
         }
 
-        $documents = $query->paginate(10);
+        $perPage = (int) $request->input('per_page', 20);
+        $perPage = max(1, min($perPage, 100)); // clamp 1..100
+        $documents = $query->paginate($perPage);
 
         return response()->json([
             'count' => $documents->total(),
             'current_page' => $documents->currentPage(),
             'last_page' => $documents->lastPage(),
-            'data' => $documents->items()
+            'per_page' => $documents->perPage(),
+            'data' => $documents->items(),
         ]);
 
     }
