@@ -21,6 +21,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/user', [AuthController::class, 'me']);
 
+        Route::get('/dashboard/activity', [DocumentController::class, 'activity']);
+
         // Documents
 
         Route::get('/documents', [DocumentController::class, 'index']);
